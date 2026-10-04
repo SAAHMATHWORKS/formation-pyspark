@@ -13,6 +13,7 @@ cd formation-pyspark
 |---|---|---|
 | **Jour 1 matin** · Big Data, Hadoop, HDFS, MapReduce | [`j1-matin/hadoop-cluster`](j1-matin/hadoop-cluster/) | Le mini-cluster Hadoop du TP : `docker-compose.yaml`, `config` et le mode d'emploi |
 | **Jour 1 après-midi** · Spark, RDD, DataFrames | [`j1-apres-midi/spark-cluster`](j1-apres-midi/spark-cluster/) | **Tutoriel complet :** monter un cluster Spark Standalone avec Docker, étape par étape, avec schémas et captures |
+| | [`j1-apres-midi/spark-fabric`](j1-apres-midi/spark-fabric/) | **Tutoriel complet :** Spark dans Azure avec Microsoft Fabric, gratuitement pendant 60 jours : compte Azure, essai Fabric, notebook et lakehouse |
 | Jour 2 matin · DataFrames et Spark SQL | *à venir* | |
 | Jour 2 après-midi · Machine Learning avec spark.ml | *à venir* | |
 | Jour 3 matin · Streaming et Spark SQL avancé | *à venir* | |

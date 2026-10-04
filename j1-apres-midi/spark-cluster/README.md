@@ -2,7 +2,7 @@
 
 > Formation **PySpark – Traitement des données** · Jour 1 après-midi · Notion 3, « Spark sur un cluster et dans le cloud »
 > Document à refaire chez soi, étape par étape. Durée : 45 minutes environ.
-> Fichier prêt à l'emploi dans ce dossier : [`docker-compose.yaml`](docker-compose.yaml) · [Retour au sommaire du dépôt](../../README.md)
+> Fichier prêt à l'emploi dans ce dossier : [`docker-compose.yaml`](docker-compose.yaml) · [Retour au sommaire du dépôt](../../README.md) · Voir aussi : [Spark dans Azure avec Fabric](../spark-fabric/)
 
 ## Sommaire
 
