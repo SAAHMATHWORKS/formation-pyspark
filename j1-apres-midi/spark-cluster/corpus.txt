@@ -1,0 +1,4 @@
+Spark est rapide et Spark est distribué
+Hadoop stocke les données et Hadoop distribue les calculs
+les données sont découpées en blocs et les blocs sont répliqués
+YARN attribue les ressources et Spark utilise YARN

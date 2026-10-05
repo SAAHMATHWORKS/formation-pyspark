@@ -17,10 +17,11 @@
 9. [Ce qui est né : la généalogie des processus](#9-ce-qui-est-né--la-généalogie-des-processus)
 10. [Le calcul, et où il a eu lieu](#10-le-calcul-et-où-il-a-eu-lieu)
 11. [Lire les interfaces 8080 et 4040](#11-lire-les-interfaces-8080-et-4040)
-12. [Terminer et nettoyer](#12-terminer-et-nettoyer)
-13. [Reprendre après un redémarrage du poste](#13-reprendre-après-un-redémarrage-du-poste)
-14. [Dépannage](#14-dépannage)
-15. [Mémo](#15-mémo)
+12. [Un script avec `spark-submit`](#12-un-script-avec-spark-submit)
+13. [Terminer et nettoyer](#13-terminer-et-nettoyer)
+14. [Reprendre après un redémarrage du poste](#14-reprendre-après-un-redémarrage-du-poste)
+15. [Dépannage](#15-dépannage)
+16. [Mémo](#16-mémo)
 
 ---
 
@@ -751,9 +752,250 @@ Si vous avez aussi exécuté la cellule 3, ajoutez 8 tâches : **29**.
 
 ---
 
-## 12. Terminer et nettoyer
+## 12. Un script avec `spark-submit`
 
-### 12.1 Arrêter l'application
+Le notebook sert à explorer. En production, le traitement est un **script**, lancé par `spark-submit`, souvent par un ordonnanceur (cron, Airflow). On lance ici le **même script** deux fois : en local, puis sur le cluster. **Seule la ligne de commande change.**
+
+> **Avant de commencer : arrêtez la session du notebook** (`spark.stop()`, cellule 4 de la [section 13.1](#131-arrêter-lapplication)). Elle garde sinon les 4 cœurs du cluster, et le script attendrait indéfiniment avec le message `Initial job has not accepted any resources`.
+
+### 12.1 Le script et les données
+
+Les deux fichiers sont dans ce dossier du dépôt : [`compte_mots.py`](compte_mots.py) et [`corpus.txt`](corpus.txt). Copiez-les dans le dossier partagé avec `spark-lab` :
+
+```bash
+$ cp compte_mots.py corpus.txt ~/spark-lab/
+```
+
+```python
+# compte_mots.py
+import re
+import sys
+
+from pyspark.sql import SparkSession
+
+fichier = sys.argv[1]
+spark = SparkSession.builder.appName("Comptage de mots").getOrCreate()
+
+comptes = (
+    spark.sparkContext.textFile(fichier)
+    .flatMap(lambda ligne: re.findall(r"\w+", ligne.lower()))
+    .map(lambda mot: (mot, 1))
+    .reduceByKey(lambda a, b: a + b)
+    .sortBy(lambda kv: (-kv[1], kv[0]))
+)
+for mot, nombre in comptes.take(5):
+    print(f"{mot:12} {nombre}")
+
+spark.stop()
+```
+
+| Ligne | Rôle |
+|---|---|
+| `fichier = sys.argv[1]` | Le premier argument après le nom du script : le même script peut traiter n'importe quel fichier. |
+| `SparkSession.builder.appName(…).getOrCreate()` | Dans un script, c'est à vous de créer la session. Pas de `.master(…)` : il viendra de la ligne de commande. |
+| `textFile` … `sortBy` | Le comptage de mots de la notion 4 : que des transformations, rien ne tourne encore. |
+| `comptes.take(5)` | L'**action** qui déclenche le calcul et renvoie 5 tuples au driver. |
+| `spark.stop()` | Rend les exécuteurs au cluster. |
+
+Les commandes `spark-submit` se tapent dans un **terminal JupyterLab** (**File → New → Terminal**), c'est-à-dire **dans** le conteneur `spark-lab` : l'invite est `jovyan@<identifiant du conteneur>`. Les commandes `docker` se tapent dans le terminal **du poste**.
+
+### 12.2 En local
+
+```bash
+jovyan$ cd ~/work
+jovyan$ spark-submit --master "local[2]" compte_mots.py corpus.txt 2>/dev/null
+```
+
+Attendu, après 5 à 10 secondes :
+
+```
+les          5
+et           4
+spark        3
+blocs        2
+données      2
+```
+
+| Morceau | Rôle |
+|---|---|
+| `spark-submit` | Démarre la JVM du driver (`SparkSubmit`), qui lance à son tour `python3 compte_mots.py corpus.txt`. Dans un notebook, c'est l'inverse : Python démarre d'abord, puis lance la JVM. |
+| `--master "local[2]"` | Driver et exécuteur dans une seule JVM, 2 tâches en parallèle. |
+| `2>/dev/null` | Les `print` sortent sur le canal 1 (*stdout*), le journal de Spark sur le canal 2 (*stderr*) : on jette le canal 2. |
+
+Pour lire ce que la redirection cachait, gardez le journal dans un fichier :
+
+```bash
+jovyan$ spark-submit --master "local[2]" compte_mots.py corpus.txt 2> journal.txt
+jovyan$ wc -l journal.txt
+jovyan$ grep -E "SparkUI|Starting executor|Got job|Submitting|Finished task|finished:" journal.txt
+```
+
+Ce que l'on y lit (extraits) :
+
+```
+221 journal.txt
+INFO Utils: Successfully started service 'SparkUI' on port 4040.
+INFO Executor: Starting executor ID driver on host 103bc05c4256
+INFO DAGScheduler: Got job 0 (sortBy at /home/jovyan/work/compte_mots.py:14) with 2 output partitions
+INFO DAGScheduler: Submitting ShuffleMapStage 0 (PairwiseRDD[3] at reduceByKey at …:13)
+INFO TaskSetManager: Finished task 0.0 in stage 0.0 (TID 0) in 1888 ms on 103bc05c4256 (executor driver) (1/2)
+…
+INFO DAGScheduler: Got job 1 (sortBy at …:14) with 2 output partitions
+INFO DAGScheduler: Got job 2 (runJob at PythonRDD.scala:218) with 1 output partitions
+INFO DAGScheduler: Submitting ShuffleMapStage 5 …
+INFO DAGScheduler: Submitting ResultStage 6 …
+```
+
+| Constat | Explication |
+|---|---|
+| **221 lignes** de journal pour 5 lignes de résultat | D'où le `2>/dev/null`. |
+| `executor ID driver on host 103bc05c4256` | En local, l'exécuteur vit dans la JVM du driver. `103bc05c4256` est le nom de machine du conteneur : son identifiant Docker, pas `spark-lab`. |
+| **3 jobs** pour un seul `take(5)` | En PySpark, `sortBy` lance lui-même un `count()` (job 0) puis un échantillonnage (job 1), pour fixer les frontières du tri. Le `take(5)` est le job 2. |
+| Stages 0, 1, 3, 5, 6 | Les stages 2 et 4 sont **skipped** : ils auraient refait la lecture et le `reduceByKey`, Spark réutilise les fichiers de shuffle du stage 0. |
+| 2 tâches par stage, 1 seule au stage 6 | 2 partitions ; `take(5)` lit d'abord la première partition, qui suffit. |
+| Premières tâches : 1,9 s ; suivantes : 70 à 120 ms | Les premières paient le démarrage des processus `python3` ouvriers. Sur 9 s de vie, le calcul ne pèse presque rien : c'est le coût fixe de Spark, invisible sur de gros volumes. |
+
+> **`could not bind on port 4040. Attempting port 4041` ?** Un notebook ouvert avec une `SparkSession` garde sa JVM, donc son port et sa mémoire. Seul le 4040 est publié par `docker run` : l'interface du script est alors invisible depuis le navigateur. **Kernel → Shut Down All Kernels** dans JupyterLab libère tout.
+
+### 12.3 Sur le cluster : un échec instructif
+
+Le script ne change pas. Seule la commande change :
+
+```bash
+jovyan$ spark-submit \
+  --master spark://spark-master:7077 \
+  --conf spark.driver.host=spark-lab \
+  --conf spark.driver.bindAddress=0.0.0.0 \
+  --conf spark.executor.memory=1g \
+  compte_mots.py corpus.txt 2> journal-cluster.txt
+jovyan$ echo "code de sortie : $?"
+```
+
+| Morceau | Rôle |
+|---|---|
+| `\` en fin de ligne | La commande continue à la ligne suivante. Aucun espace après le `\`. |
+| `--master spark://spark-master:7077` | Le master Standalone, au lieu de `local[2]`. |
+| `--conf spark.driver.host=spark-lab` | Le nom sous lequel le driver s'annonce aux exécuteurs, au lieu de l'identifiant du conteneur. Mêmes réglages que la `SparkSession` de la [section 8.2](#82-la-sparksession-sur-le-cluster). |
+| `echo "code de sortie : $?"` | `$?` = le code de retour de la commande précédente : `0` = succès. C'est ce que regarde un ordonnanceur. |
+
+Résultat : un *Traceback* et **`code de sortie : 1`**. Trois endroits à lire, sur 160 lignes :
+
+```
+File "/home/jovyan/work/compte_mots.py", line 14, in <module>
+    .sortBy(lambda kv: (-kv[1], kv[0]))
+  … in sortByKey
+    rddSize = self.count()
+…
+org.apache.spark.SparkException: Job aborted due to stage failure: Task 0 in stage 0.0 failed 4 times,
+most recent failure: Lost task 0.3 in stage 0.0 (TID 7) (172.28.0.4 executor 0):
+java.io.FileNotFoundException: File file:/home/jovyan/work/corpus.txt does not exist
+…
+Caused by: java.io.FileNotFoundException: File file:/home/jovyan/work/corpus.txt does not exist
+```
+
+1. **Le haut du traceback** : la ligne de **votre** code (ligne 14, le `sortBy`, et son `count()` caché).
+2. **La ligne `SparkException`** : ce qui s'est passé. La tâche a tourné sur un **worker** (`172.28.0.4 executor 0`), a été retentée 4 fois (`failed 4 times`, tentative `0.3` = la 4ᵉ), puis le job a été abandonné.
+3. **Le dernier `Caused by:`** : la cause racine. Les lignes `at …` peuvent être ignorées.
+
+> Le traceback Python s'affiche malgré le `2>` : `spark-submit` fusionne les deux canaux du processus Python et les recopie sur son propre canal 1. Seul le journal de la JVM part dans le fichier.
+
+**Pourquoi le fichier « n'existe pas » ?**
+
+```mermaid
+flowchart LR
+    subgraph lab["spark-lab : le driver"]
+        f1["/home/jovyan/work/corpus.txt ✔<br/>(le dossier ~/spark-lab monté)"]
+    end
+    subgraph w["spark-worker-1 et -2 : les exécuteurs"]
+        f2["/home/jovyan/work/ ✘<br/>(vide)"]
+    end
+    lab -- "« lisez /home/jovyan/work/corpus.txt,<br/>octets 0 à 110 et 110 à 220 »" --> w
+```
+
+Le driver vérifie le fichier **chez lui**, où il existe, et le découpe en 2 partitions. Chaque exécuteur ouvre ensuite ce chemin **sur le disque de son worker**, où il n'y a rien. En `local[2]`, la question ne se posait pas : un seul disque.
+
+**Sur un cluster, `file:` ne suffit pas : les données doivent être sur un stockage que toutes les machines voient au même chemin.** C'est le rôle de HDFS (`hdfs:///…`), de S3 chez AWS, d'ADLS et OneLake chez Azure. Sur un cluster Hadoop, la commande deviendrait `--master yarn` et `hdfs:///user/<vous>/corpus.txt`.
+
+L'échec a aussi une **bonne nouvelle** : pour qu'une tâche échoue sur `172.28.0.4 executor 0`, il a fallu que le driver joigne le master, que le master fasse lancer les exécuteurs et que ceux-ci rappellent le driver. Le réseau et la configuration sont bons ; seules les données manquent.
+
+### 12.4 Sur le cluster : la réparation
+
+Faute de HDFS ici, on fait à la main ce que ferait un stockage partagé : déposer le fichier **au même chemin** sur chaque worker. Dans le terminal **du poste** :
+
+```bash
+$ cd ~/spark-cluster      # ou le dossier spark-cluster du dépôt
+$ docker compose cp ~/spark-lab/corpus.txt spark-worker-1:/home/jovyan/work/corpus.txt
+$ docker compose cp ~/spark-lab/corpus.txt spark-worker-2:/home/jovyan/work/corpus.txt
+$ docker compose exec spark-worker-1 ls -l /home/jovyan/work
+```
+
+Attendu :
+
+```
+ ✔ spark-cluster-spark-worker-1-1 copy …/spark-lab/corpus.txt to spark-cluster-spark-worker-1-1:/home/jovyan/work/corpus.txt Copied
+ ✔ spark-cluster-spark-worker-2-1 copy …/spark-lab/corpus.txt to spark-cluster-spark-worker-2-1:/home/jovyan/work/corpus.txt Copied
+total 4
+-rw-r--r-- 1 jovyan users 220 … corpus.txt
+```
+
+> `docker compose down` supprime les workers, **et le fichier avec eux** : après un `up -d`, refaites la copie.
+
+Relancez **exactement** la même commande `spark-submit` qu'en 12.3. Attendu : le même top 5, puis `code de sortie : 0`.
+
+Le journal du driver montre où le calcul a eu lieu :
+
+```bash
+jovyan$ grep -E "Connected to Spark cluster|Executor added|Registered executor|Finished task" journal-cluster.txt
+```
+
+```
+INFO StandaloneSchedulerBackend: Connected to Spark cluster with app ID app-20261005125617-0002
+INFO StandaloneAppClient$ClientEndpoint: Executor added: app-…-0002/0 on worker-…-172.28.0.4-40015 (172.28.0.4:40015) with 2 core(s)
+INFO StandaloneAppClient$ClientEndpoint: Executor added: app-…-0002/1 on worker-…-172.28.0.3-44923 (172.28.0.3:44923) with 2 core(s)
+INFO …StandaloneDriverEndpoint: Registered executor … (172.28.0.3:46170) with ID 1
+INFO …StandaloneDriverEndpoint: Registered executor … (172.28.0.4:36378) with ID 0
+INFO TaskSetManager: Finished task 0.0 in stage 0.0 (TID 0) in 2872 ms on 172.28.0.4 (executor 0) (1/2)
+INFO TaskSetManager: Finished task 1.0 in stage 0.0 (TID 1) in 2859 ms on 172.28.0.3 (executor 1) (2/2)
+…
+INFO TaskSetManager: Finished task 0.0 in stage 6.0 (TID 8) in 91 ms on 172.28.0.4 (executor 0) (1/1)
+```
+
+| | `local[2]` | Cluster Standalone |
+|---|---|---|
+| Script | `compte_mots.py` | **le même** |
+| Où tournent les tâches | `on 103bc05c4256 (executor driver)` | `on 172.28.0.3 (executor 1)` et `on 172.28.0.4 (executor 0)` |
+| Jobs, stages, tâches | 3 jobs ; stages 0, 1, 3, 5, 6 ; 9 tâches | **identiques** : le plan dépend du code et des partitions, `--master` décide seulement de qui exécute |
+| Avant le premier job | ~1 s | ~6 s : démarrer une JVM exécuteur sur chaque worker (`Executor added` → `Registered executor`) |
+| Lignes `Executor: Finished task … result sent to driver` | dans le journal du driver | **absentes** : elles sont dans le journal de chaque exécuteur, sur son worker |
+
+Ces lignes « côté exécuteur » se lisent dans le worker, sous `SPARK_WORKER_DIR` (`<application>/<n° d'exécuteur>/stderr`) :
+
+```bash
+$ docker compose exec spark-worker-1 hostname -i
+$ docker compose exec spark-worker-1 ls /tmp/spark-worker
+$ docker compose exec spark-worker-1 bash -c 'grep -hE "Finished task|FileNotFoundException" /tmp/spark-worker/app-*/*/stderr | cut -c1-150'
+```
+
+```
+172.28.0.3
+app-20261005124936-0000   app-20261005125037-0001   app-20261005125617-0002
+java.io.FileNotFoundException: File file:/home/jovyan/work/corpus.txt does not exist
+…
+INFO Executor: Finished task 1.0 in stage 0.0 (TID 1). 1921 bytes result sent to driver
+INFO Executor: Finished task 1.0 in stage 1.0 (TID 3). 2307 bytes result sent to driver
+INFO Executor: Finished task 0.0 in stage 3.0 (TID 4). 2565 bytes result sent to driver
+INFO Executor: Finished task 0.0 in stage 5.0 (TID 6). 2480 bytes result sent to driver
+```
+
+Le worker `172.28.0.3` a exécuté les tâches 1, 3, 4 et 6 : exactement celles que le journal du driver attribuait à `172.28.0.3 (executor 1)`. Les `FileNotFoundException` des lancements ratés sont, eux aussi, **ici**, là où la lecture a eu lieu. Le `bash -c '…'` fait interpréter l'étoile `app-*` **dans** le worker, et non sur le poste.
+
+> **Sur `localhost:8080`, les lancements ratés sont aussi `FINISHED`.** Pour le master, l'application s'est terminée et a rendu ses ressources ; il ne sait pas si le calcul a réussi. La réussite se lit dans le **code de sortie** et dans le **journal du driver**.
+
+---
+
+## 13. Terminer et nettoyer
+
+### 13.1 Arrêter l'application
 
 ```python
 # Cellule 4
@@ -778,7 +1020,7 @@ org.apache.spark.deploy.SparkSubmit
 |---|---|
 | L'**application** : les exécuteurs et leur `python3` disparaissent des workers, l'application passe dans *Completed Applications* sur la page 8080, et `localhost:4040` ne répond plus. | La **JVM** `SparkSubmit` de `spark-lab` : le noyau Python la garde en veille, prête pour une prochaine session. Elle disparaît à l'**arrêt du noyau** (Kernel → Shut Down Kernel). |
 
-### 12.2 Supprimer le cluster
+### 13.2 Supprimer le cluster
 
 ```bash
 $ docker network disconnect spark-cluster_default spark-lab
@@ -803,7 +1045,7 @@ Attendu :
 
 ---
 
-## 13. Reprendre après un redémarrage du poste
+## 14. Reprendre après un redémarrage du poste
 
 À l'extinction du poste, Docker **arrête** les conteneurs sans les supprimer. `docker ps` (les conteneurs **en marche**) est alors vide, mais `docker ps -a` (**tous** les conteneurs, `-a` = *all*) les montre en `Exited`.
 
@@ -840,7 +1082,7 @@ spark-lab                        Up 21 seconds (healthy)
 
 ---
 
-## 14. Dépannage
+## 15. Dépannage
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
@@ -852,12 +1094,15 @@ spark-lab                        Up 21 seconds (healthy)
 | `Initial job has not accepted any resources` | Aucun exécuteur n'a démarré : workers absents, mémoire demandée trop grande, ou driver injoignable | Sur `localhost:8080`, vérifiez les 2 workers **ALIVE** ; gardez `spark.executor.memory` ≤ `SPARK_WORKER_MEMORY` ; vérifiez `spark.driver.host` et le `getent` dans le sens worker → `spark-lab` |
 | `localhost:4040` ne répond pas | Aucune `SparkSession` ouverte, ou une autre application occupe le 4040 (la vôtre est alors sur 4041, non publié) | Exécutez la cellule 1 ; arrêtez les noyaux des autres notebooks |
 | `Python in worker has different version than that in driver` | Versions de Python différentes entre `spark-lab` et les workers | Utilisez **la même image** partout |
+| `FileNotFoundException: File file:/home/jovyan/work/… does not exist` avec `spark-submit` sur le cluster | Le fichier n'existe que dans `spark-lab` ; les exécuteurs le cherchent sur le disque des workers | Copiez-le sur chaque worker au même chemin ([section 12.4](#124-sur-le-cluster--la-réparation)), ou utilisez un stockage partagé (HDFS, S3) |
+| `spark-submit` sur le cluster attend, avec `Initial job has not accepted any resources` en boucle | La session du notebook occupe déjà les 4 cœurs du cluster | `spark.stop()` dans le notebook, ou ajoutez `--conf spark.cores.max=2` aux deux applications |
+| L'application est `FINISHED` sur 8080, mais le script a échoué | Le master ne connaît que la fin de l'application, pas le résultat du calcul | Lisez le code de sortie (`echo $?`) et le journal du driver |
 | `endpoint with name spark-lab already exists` | `spark-lab` est déjà branché | Rien à faire |
 | Les conteneurs du cluster sont `unhealthy` | La ligne `healthcheck: disable: true` manque | Ajoutez-la, puis `docker compose up -d` |
 
 ---
 
-## 15. Mémo
+## 16. Mémo
 
 ### La documentation de Spark et ce TP
 
