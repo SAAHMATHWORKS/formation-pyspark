@@ -21,7 +21,12 @@ cd formation-pyspark
 
 ## Corrections des évaluations
 
-Les corrections sont publiées dans ce dépôt **à la fin de chaque demi-journée**, une fois l'évaluation terminée.
+Les évaluations se font **en séance**, devant le formateur ; leurs corrections sont ici, pour revoir chaque étape **à la maison**. Toutes les sorties qu'elles montrent sont réelles, erreurs fréquentes comprises.
+
+| Demi-journée | Évaluation | Correction |
+|---|---|---|
+| Jour 1 après-midi | Installer un cluster Spark Standalone (3 workers, notebook, `spark-submit`) | [`j1-apres-midi/correction-evaluation`](j1-apres-midi/correction-evaluation/) |
+| Jour 2 matin | Charger, transformer, croiser et enregistrer des données (CSV, JSON, texte, Parquet) | [`j2-matin/correction-evaluation`](j2-matin/correction-evaluation/) |
 
 ## Prérequis
 

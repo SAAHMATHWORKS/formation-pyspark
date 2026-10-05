@@ -1,0 +1,4 @@
+le driver demande des exécuteurs au master
+le master lance les exécuteurs sur les workers
+les exécuteurs reçoivent les tâches du driver
+les exécuteurs renvoient les résultats au driver

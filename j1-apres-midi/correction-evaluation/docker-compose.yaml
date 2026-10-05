@@ -1,0 +1,47 @@
+services:
+  spark-master:
+    image: quay.io/jupyter/pyspark-notebook
+    hostname: spark-master
+    command: ["/usr/local/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    environment:
+      SPARK_MASTER_HOST: spark-master
+    ports:
+      - "8080:8080"
+    healthcheck:
+      disable: true
+
+  spark-worker-1:
+    image: quay.io/jupyter/pyspark-notebook
+    hostname: spark-worker-1
+    command: ["/usr/local/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "1"
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_DIR: /tmp/spark-worker
+    depends_on: [spark-master]
+    healthcheck:
+      disable: true
+
+  spark-worker-2:
+    image: quay.io/jupyter/pyspark-notebook
+    hostname: spark-worker-2
+    command: ["/usr/local/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "1"
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_DIR: /tmp/spark-worker
+    depends_on: [spark-master]
+    healthcheck:
+      disable: true
+
+  spark-worker-3:
+    image: quay.io/jupyter/pyspark-notebook
+    hostname: spark-worker-3
+    command: ["/usr/local/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "1"
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_DIR: /tmp/spark-worker
+    depends_on: [spark-master]
+    healthcheck:
+      disable: true
