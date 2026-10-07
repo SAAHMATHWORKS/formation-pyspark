@@ -12,6 +12,7 @@ cd formation-pyspark
 | Demi-journée | Dossier | Ce que vous y trouvez |
 |---|---|---|
 | **Jour 1 matin** · Big Data, Hadoop, HDFS, MapReduce | [`j1-matin/hadoop-cluster`](j1-matin/hadoop-cluster/) | Le mini-cluster Hadoop du TP : `docker-compose.yaml`, `config` et le mode d'emploi |
+| | [`j1-matin/hdfs-replication`](j1-matin/hdfs-replication/) | **Pour aller plus loin :** la réplication sur 5 DataNodes, une panne et la réparation automatique, et le délai avant qu'un DataNode soit déclaré mort |
 | **Jour 1 après-midi** · Spark, RDD, DataFrames | [`j1-apres-midi/spark-cluster`](j1-apres-midi/spark-cluster/) | **Tutoriel complet :** monter un cluster Spark Standalone avec Docker, étape par étape, avec schémas et captures, puis le même script lancé avec `spark-submit` en local et sur le cluster |
 | | [`j1-apres-midi/spark-fabric`](j1-apres-midi/spark-fabric/) | **Tutoriel complet :** Spark dans Azure avec Microsoft Fabric, gratuitement pendant 60 jours : compte Azure, essai Fabric, notebook et lakehouse |
 | **Jour 2 matin** · DataFrames et Spark SQL | [`j2-matin/spark-hdfs`](j2-matin/spark-hdfs/) | **Tutoriel :** lire dans HDFS depuis PySpark, avec le cluster Hadoop du jour 1 ; le chemin et le master ; le générateur des données du jour |
@@ -25,6 +26,7 @@ Les évaluations se font **en séance**, devant le formateur ; leurs corrections
 
 | Demi-journée | Évaluation | Correction |
 |---|---|---|
+| Jour 1 matin | Votre cluster Hadoop : état du cluster, blocs HDFS, panne d'un DataNode, job MapReduce sur YARN | [`j1-matin/correction-evaluation`](j1-matin/correction-evaluation/) |
 | Jour 1 après-midi | Installer un cluster Spark Standalone (3 workers, notebook, `spark-submit`) | [`j1-apres-midi/correction-evaluation`](j1-apres-midi/correction-evaluation/) |
 | Jour 2 matin | Charger, transformer, croiser et enregistrer des données (CSV, JSON, texte, Parquet) | [`j2-matin/correction-evaluation`](j2-matin/correction-evaluation/) |
 
